@@ -55,9 +55,22 @@ function currentDayCode() {
   return days[ubNow().getUTCDay()];
 }
 
-function currentPeriod() {
+function resolvePeriod() {
   const t = currentTimeHHMM();
-  return PERIODS.find(p => t >= p.start && t <= p.end) || null;
+  const active = PERIODS.find(p => t >= p.start && t <= p.end);
+  if (active) return { period: active, state: 'active' };
+
+  // Before first period
+  if (t < PERIODS[0].start) return { period: PERIODS[0], state: 'upcoming' };
+
+  // After last period
+  if (t > PERIODS[PERIODS.length - 1].end) return { period: PERIODS[PERIODS.length - 1], state: 'done' };
+
+  // Break between periods — find next
+  const next = PERIODS.find(p => p.start > t);
+  if (next) return { period: next, state: 'break' };
+
+  return { period: PERIODS[PERIODS.length - 1], state: 'done' };
 }
 
 function getWeekParity(semesterStartISO, weekParityRule) {
@@ -116,10 +129,19 @@ async function getActiveSemester() {
 }
 
 async function getTargetRooms() {
-  return cached('rooms', async () => {
+  return cached('rooms:target', async () => {
     const data = await apiFetch('/rooms?limit=100');
     return data.docs
       .filter(r => isTargetRoom(r.number))
+      .map(r => ({ id: r.id, number: r.number, type: r.roomType }));
+  });
+}
+
+async function getAllRooms() {
+  return cached('rooms:all', async () => {
+    const data = await apiFetch('/rooms?limit=100');
+    return data.docs
+      .filter(r => /^\d+$/.test(r.number))
       .map(r => ({ id: r.id, number: r.number, type: r.roomType }));
   });
 }
@@ -134,25 +156,24 @@ async function getTodayEntries(semesterId, day) {
 
 // --- Main logic ---
 
-async function getFreeRooms() {
+async function getFreeRooms(includeAll = false) {
   const semester = await getActiveSemester();
   if (!semester) throw new Error('No active semester found');
 
   const day = currentDayCode();
-  const period = currentPeriod();
+  const { period, state: periodState } = resolvePeriod();
   const weekParity = getWeekParity(semester.startDate, semester.weekParityRule);
 
   const [targetRooms, entries] = await Promise.all([
-    getTargetRooms(),
+    includeAll ? getAllRooms() : getTargetRooms(),
     (day === 'sat' || day === 'sun') ? Promise.resolve([]) : getTodayEntries(semester.id, day),
   ]);
 
-  // Build set of busy room IDs for current period
+  // Build set of busy room IDs for resolved period
   const busyRoomIds = new Set();
   const busyInfo = {};
 
-  if (period) {
-    for (const entry of entries) {
+  for (const entry of entries) {
       if (entry.period !== period.n) continue;
       if (entry.weekParity !== 'all' && entry.weekParity !== weekParity) continue;
 
@@ -168,7 +189,6 @@ async function getFreeRooms() {
         lessonType: entry.lessonType || null,
       };
     }
-  }
 
   const rooms = targetRooms.map(room => ({
     number: room.number,
@@ -182,7 +202,8 @@ async function getFreeRooms() {
   return {
     time: currentTimeHHMM(),
     day,
-    period: period ? { n: period.n, start: period.start, end: period.end } : null,
+    period: { n: period.n, start: period.start, end: period.end },
+    periodState,
     weekParity,
     semester: semester.name,
     isWeekend: day === 'sat' || day === 'sun',
@@ -196,7 +217,7 @@ async function getFreeRooms() {
 
 app.get('/api/free-rooms', async (req, res) => {
   try {
-    const data = await getFreeRooms();
+    const data = await getFreeRooms(req.query.all === '1');
     res.json(data);
   } catch (err) {
     console.error(err);

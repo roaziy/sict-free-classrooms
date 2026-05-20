@@ -66,6 +66,48 @@
 
     main { padding: 1.5rem; max-width: 1100px; margin: 0 auto; }
 
+    .filters {
+      display: flex;
+      align-items: center;
+      gap: 0.4rem;
+      flex-wrap: wrap;
+      margin-bottom: 0.25rem;
+    }
+
+    .filter-divider {
+      width: 1px;
+      height: 18px;
+      background: #2d3148;
+      margin: 0 0.25rem;
+    }
+
+    .filter-btn {
+      padding: 0.3rem 0.75rem;
+      border-radius: 999px;
+      font-size: 0.75rem;
+      font-weight: 600;
+      border: 1px solid #2d3148;
+      background: transparent;
+      color: #475569;
+      cursor: pointer;
+      transition: background 0.15s, color 0.15s, border-color 0.15s;
+      white-space: nowrap;
+    }
+
+    .filter-btn:hover { border-color: #4b5563; color: #94a3b8; }
+
+    .filter-btn.active {
+      background: #312e81;
+      border-color: #4338ca;
+      color: #c7d2fe;
+    }
+
+    .filter-btn.all-rooms.active {
+      background: #1e3a5f;
+      border-color: #2563eb;
+      color: #93c5fd;
+    }
+
     .floor-label {
       font-size: 0.72rem;
       font-weight: 700;
@@ -206,41 +248,70 @@
       <h2>Амралтын өдөр</h2>
       <p>Өнөөдөр хичээл байхгүй. Бүх танхимууд сул.</p>
     </div>
-    <div id="no-period" style="display:none">
-      <h2>Одоо хичээлийн цаг биш</h2>
-      <p>Бүх танхимууд сул байна.</p>
+    <div id="no-period" style="display:none"></div>
+    <div class="filters">
+      <button class="filter-btn all-rooms" id="btn-all-rooms">Бүгд танхим</button>
+      <div class="filter-divider"></div>
+      <button class="filter-btn active" data-floor="1">1-р давхар</button>
+      <button class="filter-btn active" data-floor="2">2-р давхар</button>
+      <button class="filter-btn active" data-floor="4">4-р давхар</button>
     </div>
     <div id="rooms-container"></div>
   </main>
 
   <script>
     const FLOOR_LABELS = {
-      1: '1-р давхар',
-      2: '2-р давхар',
-      4: '4-р давхар',
+      1: '1-р давхар', 2: '2-р давхар', 3: '3-р давхар', 4: '4-р давхар',
     };
-
     const TYPE_LABELS = {
-      lecture: 'Лекц',
-      lab: 'Лаб',
-      seminar: 'Семинар',
-      computer: 'Компьютерийн өрөө',
+      lecture: 'Лекц', lab: 'Лаб', seminar: 'Семинар', computer: 'Компьютер',
     };
-
     const DAY_MN = {
       mon: 'Даваа', tue: 'Мягмар', wed: 'Лхагва',
       thu: 'Пүрэв', fri: 'Баасан', sat: 'Бямба', sun: 'Ням',
     };
 
+    const state = {
+      showAll: false,
+      activeFloors: new Set([1, 2, 4]),
+      data: null,
+      allData: null,
+    };
+
     let refreshTimer = null;
+
+    // --- Fetch ---
+
+    async function fetchRooms(all = false) {
+      const url = all ? '/api/free-rooms?all=1' : '/api/free-rooms';
+      const res = await fetch(url);
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      return res.json();
+    }
 
     async function load() {
       setStatus('<span class="spinner"></span> Ачааллаж байна...');
       try {
-        const res = await fetch('/api/free-rooms');
-        if (!res.ok) throw new Error(`HTTP ${res.status}`);
-        const data = await res.json();
-        render(data);
+        state.data = await fetchRooms(false);
+        // reset allData on each refresh so it re-fetches fresh
+        state.allData = null;
+        document.getElementById('error-box').style.display = 'none';
+        setStatus(`Шинэчлэгдсэн: ${new Date().toLocaleTimeString('mn-MN')}`);
+      } catch (err) {
+        document.getElementById('error-box').style.display = 'block';
+        document.getElementById('error-box').textContent = 'Алдаа: ' + err.message;
+        setStatus('');
+      }
+      renderFiltered();
+      clearTimeout(refreshTimer);
+      refreshTimer = setTimeout(load, 5 * 60 * 1000);
+    }
+
+    async function ensureAllData() {
+      if (state.allData) return;
+      setStatus('<span class="spinner"></span> Ачааллаж байна...');
+      try {
+        state.allData = await fetchRooms(true);
         setStatus(`Шинэчлэгдсэн: ${new Date().toLocaleTimeString('mn-MN')}`);
         document.getElementById('error-box').style.display = 'none';
       } catch (err) {
@@ -248,13 +319,41 @@
         document.getElementById('error-box').textContent = 'Алдаа: ' + err.message;
         setStatus('');
       }
-
-      clearTimeout(refreshTimer);
-      refreshTimer = setTimeout(load, 5 * 60 * 1000);
     }
+
+    // --- Filters ---
+
+    document.getElementById('btn-all-rooms').addEventListener('click', async () => {
+      state.showAll = !state.showAll;
+      document.getElementById('btn-all-rooms').classList.toggle('active', state.showAll);
+      if (state.showAll) await ensureAllData();
+      renderFiltered();
+    });
+
+    document.querySelectorAll('[data-floor]').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const f = parseInt(btn.dataset.floor, 10);
+        if (state.activeFloors.has(f)) {
+          // keep at least one floor active
+          if (state.activeFloors.size > 1) state.activeFloors.delete(f);
+        } else {
+          state.activeFloors.add(f);
+        }
+        btn.classList.toggle('active', state.activeFloors.has(f));
+        renderFiltered();
+      });
+    });
+
+    // --- Render ---
 
     function setStatus(html) {
       document.getElementById('status-msg').innerHTML = html;
+    }
+
+    function renderFiltered() {
+      const data = state.showAll ? (state.allData || state.data) : state.data;
+      if (!data) return;
+      render(data);
     }
 
     function render(data) {
@@ -262,6 +361,7 @@
         `${DAY_MN[data.day] || data.day}, ${data.time}`;
 
       const periodBadge = document.getElementById('badge-period');
+
       if (data.isWeekend) {
         periodBadge.textContent = 'Амралтын өдөр';
         document.getElementById('weekend-note').style.display = 'block';
@@ -272,24 +372,29 @@
       }
       document.getElementById('weekend-note').style.display = 'none';
 
-      if (!data.period) {
-        periodBadge.textContent = 'Хичээлийн цаг биш';
-        document.getElementById('no-period').style.display = 'block';
-        document.getElementById('rooms-container').innerHTML = '';
-        document.getElementById('badge-free').style.display = 'none';
-        return;
-      }
-
       document.getElementById('no-period').style.display = 'none';
-      periodBadge.textContent = `${data.period.n}-р пар · ${data.period.start}–${data.period.end}`;
+
+      const periodLabels = {
+        active:   `${data.period.n}-р пар · ${data.period.start}–${data.period.end}`,
+        break:    `Завсарлага · ${data.period.n}-р пар эхлэх дөхөж байна`,
+        upcoming: `Хичээл эхлээгүй · ${data.period.n}-р пар ${data.period.start}-д`,
+        done:     `Хичээл дууссан · ${data.period.n}-р пар дууссан`,
+      };
+      periodBadge.textContent = periodLabels[data.periodState] || `${data.period.n}-р пар`;
+
+      // Filter rooms by active floors
+      const filtered = data.rooms.filter(r => {
+        const floor = Math.floor(parseInt(r.number, 10) / 100);
+        return state.activeFloors.has(floor);
+      });
 
       const freeBadge = document.getElementById('badge-free');
       freeBadge.style.display = 'inline-block';
-      freeBadge.textContent = `${data.freeCount} / ${data.totalCount} сул`;
+      freeBadge.textContent = `${filtered.filter(r => r.free).length} / ${filtered.length} сул`;
 
-      // Group rooms by floor
+      // Group by floor
       const floors = {};
-      for (const room of data.rooms) {
+      for (const room of filtered) {
         const floor = Math.floor(parseInt(room.number, 10) / 100);
         if (!floors[floor]) floors[floor] = [];
         floors[floor].push(room);
@@ -298,7 +403,7 @@
       const container = document.getElementById('rooms-container');
       container.innerHTML = '';
 
-      for (const [floor, rooms] of Object.entries(floors).sort()) {
+      for (const [floor, rooms] of Object.entries(floors).sort((a, b) => a[0] - b[0])) {
         const label = document.createElement('div');
         label.className = 'floor-label';
         label.textContent = FLOOR_LABELS[floor] || `${floor}-р давхар`;
