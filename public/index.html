@@ -1,0 +1,351 @@
+<!DOCTYPE html>
+<html lang="mn">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>SICT — Сул Танхимууд</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      background: #0f1117;
+      color: #e2e8f0;
+      min-height: 100vh;
+    }
+
+    header {
+      background: #1a1d27;
+      border-bottom: 1px solid #2d3148;
+      padding: 1rem 1.5rem;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      flex-wrap: wrap;
+      gap: 0.75rem;
+    }
+
+    .logo {
+      font-size: 1.1rem;
+      font-weight: 700;
+      color: #fff;
+      letter-spacing: -0.02em;
+    }
+    .logo span { color: #6366f1; }
+
+    .meta {
+      display: flex;
+      gap: 1rem;
+      align-items: center;
+      flex-wrap: wrap;
+    }
+
+    .badge {
+      padding: 0.25rem 0.65rem;
+      border-radius: 999px;
+      font-size: 0.78rem;
+      font-weight: 600;
+      background: #2d3148;
+      color: #a5b4fc;
+    }
+
+    .badge.period {
+      background: #312e81;
+      color: #c7d2fe;
+    }
+
+    .badge.free-count {
+      background: #14532d;
+      color: #86efac;
+    }
+
+    #status-msg {
+      font-size: 0.78rem;
+      color: #64748b;
+    }
+
+    main { padding: 1.5rem; max-width: 1100px; margin: 0 auto; }
+
+    .floor-label {
+      font-size: 0.72rem;
+      font-weight: 700;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      color: #475569;
+      margin: 1.75rem 0 0.75rem;
+    }
+
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(130px, 1fr));
+      gap: 0.6rem;
+    }
+
+    .room {
+      border-radius: 10px;
+      padding: 0.85rem 0.9rem;
+      cursor: default;
+      border: 1px solid transparent;
+      transition: transform 0.1s, box-shadow 0.1s;
+      position: relative;
+    }
+
+    .room:hover { transform: translateY(-2px); box-shadow: 0 4px 16px rgba(0,0,0,0.4); }
+
+    .room.free {
+      background: #052e16;
+      border-color: #166534;
+    }
+
+    .room.busy {
+      background: #1c1c2e;
+      border-color: #2d3148;
+    }
+
+    .room-number {
+      font-size: 1.35rem;
+      font-weight: 700;
+      line-height: 1;
+    }
+
+    .room.free .room-number { color: #4ade80; }
+    .room.busy .room-number { color: #475569; }
+
+    .room-tag {
+      font-size: 0.65rem;
+      margin-top: 0.3rem;
+      font-weight: 500;
+    }
+
+    .room.free .room-tag { color: #166534; }
+    .room.busy .room-tag { color: #374151; }
+
+    .room-class {
+      margin-top: 0.45rem;
+      font-size: 0.68rem;
+      color: #475569;
+      line-height: 1.4;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .room.free .room-class { display: none; }
+
+    /* pill inside card */
+    .free-pill {
+      display: inline-block;
+      margin-top: 0.4rem;
+      font-size: 0.65rem;
+      font-weight: 700;
+      color: #22c55e;
+      background: #052e16;
+      border: 1px solid #166534;
+      padding: 0.1rem 0.45rem;
+      border-radius: 999px;
+    }
+
+    .room.busy .free-pill { display: none; }
+
+    #no-period {
+      display: none;
+      text-align: center;
+      padding: 4rem 1rem;
+      color: #475569;
+    }
+
+    #no-period h2 { font-size: 1.5rem; margin-bottom: 0.5rem; color: #64748b; }
+
+    #error-box {
+      display: none;
+      background: #2c0a0a;
+      border: 1px solid #7f1d1d;
+      color: #fca5a5;
+      border-radius: 8px;
+      padding: 1rem;
+      margin: 1rem 0;
+      font-size: 0.85rem;
+    }
+
+    .spinner {
+      display: inline-block;
+      width: 14px; height: 14px;
+      border: 2px solid #2d3148;
+      border-top-color: #6366f1;
+      border-radius: 50%;
+      animation: spin 0.7s linear infinite;
+      vertical-align: middle;
+      margin-right: 4px;
+    }
+
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    .weekend-note {
+      display: none;
+      text-align: center;
+      padding: 4rem 1rem;
+      color: #475569;
+    }
+    .weekend-note h2 { font-size: 1.5rem; color: #64748b; margin-bottom: 0.5rem; }
+  </style>
+</head>
+<body>
+  <header>
+    <div class="logo">SICT <span>//</span> Сул Танхимууд</div>
+    <div class="meta">
+      <span class="badge" id="badge-time">--:--</span>
+      <span class="badge period" id="badge-period">Ачааллаж байна...</span>
+      <span class="badge free-count" id="badge-free" style="display:none"></span>
+      <span id="status-msg"></span>
+    </div>
+  </header>
+
+  <main>
+    <div id="error-box"></div>
+    <div id="weekend-note" class="weekend-note" style="display:none">
+      <h2>Амралтын өдөр</h2>
+      <p>Өнөөдөр хичээл байхгүй. Бүх танхимууд сул.</p>
+    </div>
+    <div id="no-period" style="display:none">
+      <h2>Одоо хичээлийн цаг биш</h2>
+      <p>Бүх танхимууд сул байна.</p>
+    </div>
+    <div id="rooms-container"></div>
+  </main>
+
+  <script>
+    const FLOOR_LABELS = {
+      1: '1-р давхар',
+      2: '2-р давхар',
+      4: '4-р давхар',
+    };
+
+    const TYPE_LABELS = {
+      lecture: 'Лекц',
+      lab: 'Лаб',
+      seminar: 'Семинар',
+      computer: 'Компьютерийн өрөө',
+    };
+
+    const DAY_MN = {
+      mon: 'Даваа', tue: 'Мягмар', wed: 'Лхагва',
+      thu: 'Пүрэв', fri: 'Баасан', sat: 'Бямба', sun: 'Ням',
+    };
+
+    let refreshTimer = null;
+
+    async function load() {
+      setStatus('<span class="spinner"></span> Ачааллаж байна...');
+      try {
+        const res = await fetch('/api/free-rooms');
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        const data = await res.json();
+        render(data);
+        setStatus(`Шинэчлэгдсэн: ${new Date().toLocaleTimeString('mn-MN')}`);
+        document.getElementById('error-box').style.display = 'none';
+      } catch (err) {
+        document.getElementById('error-box').style.display = 'block';
+        document.getElementById('error-box').textContent = 'Алдаа: ' + err.message;
+        setStatus('');
+      }
+
+      clearTimeout(refreshTimer);
+      refreshTimer = setTimeout(load, 5 * 60 * 1000);
+    }
+
+    function setStatus(html) {
+      document.getElementById('status-msg').innerHTML = html;
+    }
+
+    function render(data) {
+      document.getElementById('badge-time').textContent =
+        `${DAY_MN[data.day] || data.day}, ${data.time}`;
+
+      const periodBadge = document.getElementById('badge-period');
+      if (data.isWeekend) {
+        periodBadge.textContent = 'Амралтын өдөр';
+        document.getElementById('weekend-note').style.display = 'block';
+        document.getElementById('rooms-container').innerHTML = '';
+        document.getElementById('no-period').style.display = 'none';
+        document.getElementById('badge-free').style.display = 'none';
+        return;
+      }
+      document.getElementById('weekend-note').style.display = 'none';
+
+      if (!data.period) {
+        periodBadge.textContent = 'Хичээлийн цаг биш';
+        document.getElementById('no-period').style.display = 'block';
+        document.getElementById('rooms-container').innerHTML = '';
+        document.getElementById('badge-free').style.display = 'none';
+        return;
+      }
+
+      document.getElementById('no-period').style.display = 'none';
+      periodBadge.textContent = `${data.period.n}-р пар · ${data.period.start}–${data.period.end}`;
+
+      const freeBadge = document.getElementById('badge-free');
+      freeBadge.style.display = 'inline-block';
+      freeBadge.textContent = `${data.freeCount} / ${data.totalCount} сул`;
+
+      // Group rooms by floor
+      const floors = {};
+      for (const room of data.rooms) {
+        const floor = Math.floor(parseInt(room.number, 10) / 100);
+        if (!floors[floor]) floors[floor] = [];
+        floors[floor].push(room);
+      }
+
+      const container = document.getElementById('rooms-container');
+      container.innerHTML = '';
+
+      for (const [floor, rooms] of Object.entries(floors).sort()) {
+        const label = document.createElement('div');
+        label.className = 'floor-label';
+        label.textContent = FLOOR_LABELS[floor] || `${floor}-р давхар`;
+        container.appendChild(label);
+
+        const grid = document.createElement('div');
+        grid.className = 'grid';
+
+        for (const room of rooms) {
+          const card = document.createElement('div');
+          card.className = `room ${room.free ? 'free' : 'busy'}`;
+
+          const numDiv = document.createElement('div');
+          numDiv.className = 'room-number';
+          numDiv.textContent = room.number;
+
+          const tagDiv = document.createElement('div');
+          tagDiv.className = 'room-tag';
+          tagDiv.textContent = TYPE_LABELS[room.type] || room.type || '';
+
+          card.appendChild(numDiv);
+          card.appendChild(tagDiv);
+
+          if (room.free) {
+            const pill = document.createElement('span');
+            pill.className = 'free-pill';
+            pill.textContent = 'Сул';
+            card.appendChild(pill);
+          } else if (room.class) {
+            const cls = document.createElement('div');
+            cls.className = 'room-class';
+            const parts = [];
+            if (room.class.groupCode) parts.push(room.class.groupCode);
+            if (room.class.teacher) parts.push(room.class.teacher);
+            if (room.class.subject) parts.push(room.class.subject);
+            cls.textContent = parts.join(' · ') || 'Хичээлтэй';
+            card.appendChild(cls);
+          }
+
+          grid.appendChild(card);
+        }
+
+        container.appendChild(grid);
+      }
+    }
+
+    load();
+  </script>
+</body>
+</html>
